@@ -117,15 +117,26 @@
           </div>
         </div>
 
-        <!-- Cài đặt API key cho Claude (chỉ chạy local) -->
+        <!-- Trạng thái AI (key được giấu trên server qua /api/summary) -->
         <div class="settings-group">
-          <div class="setting-row column">
-            <span>🔑 Claude API Key (cho tab Quét AI)</span>
-            <input id="api-key-input" type="password" placeholder="sk-ant-..." />
-            <button id="save-api-key" class="secondary-btn">Lưu</button>
-            <small class="muted">Lưu cục bộ trong trình duyệt. Chỉ dùng cho mục đích học tập.</small>
+          <div class="setting-row">
+            <span>🤖 AI Tóm tắt</span>
+            <span class="muted" id="ai-status">Đang kiểm tra...</span>
           </div>
         </div>
+
+        <!-- Phần API key chỉ dành cho LOCAL dev không có proxy -->
+        <details class="settings-group" id="local-key-section" style="display:none">
+          <summary style="cursor:pointer;padding:14px 16px;">
+            🔧 Tuỳ chọn nâng cao (chỉ local dev)
+          </summary>
+          <div class="setting-row column">
+            <span>🔑 Claude API Key (local fallback)</span>
+            <input id="api-key-input" type="password" placeholder="sk-ant-..." />
+            <button id="save-api-key" class="secondary-btn">Lưu vào trình duyệt</button>
+            <small class="muted">Chỉ dùng khi chạy local không có proxy. Khi deploy Vercel thì không cần.</small>
+          </div>
+        </details>
 
         <!-- Nút cài app (chỉ hiện khi trình duyệt hỗ trợ) -->
         <button id="install-btn" class="primary-btn install-btn" hidden>📲 Cài app vào máy</button>
