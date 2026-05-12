@@ -17,6 +17,68 @@
   <title>BookConnect AI — PWA</title>
 
   <link rel="stylesheet" href="styles.css" />
+
+  <!-- CSS bổ sung cho camera (đặt inline để không phải sửa styles.css) -->
+  <style>
+    .camera-frame {
+      position: relative;
+      overflow: hidden;
+    }
+    .camera-frame video,
+    .camera-frame img.captured {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: none;
+      background: #000;
+      border-radius: inherit;
+    }
+    .camera-frame video.active,
+    .camera-frame img.captured.active {
+      display: block;
+    }
+    .camera-frame.has-media .camera-icon {
+      display: none;
+    }
+    .camera-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+    .camera-actions button {
+      flex: 1;
+      min-width: 120px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid #ddd;
+      background: #f5f3ff;
+      color: #4c1d95;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .camera-actions button:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+    }
+    .camera-actions .danger {
+      background: #fef2f2;
+      color: #b91c1c;
+    }
+    .camera-error {
+      margin-top: 8px;
+      padding: 8px 10px;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #b91c1c;
+      border-radius: 8px;
+      font-size: 13px;
+      display: none;
+    }
+    .camera-error.show { display: block; }
+  </style>
 </head>
 <body>
 
@@ -49,10 +111,37 @@
       <section class="tab" data-tab="scan" hidden>
         <h1 class="page-title">🔍 Quét AI</h1>
 
-        <div class="camera-frame">
+        <div class="camera-frame" id="camera-frame">
           <div class="camera-icon">📷</div>
           <div class="scan-line" id="scan-line"></div>
+
+          <!-- Video stream từ camera -->
+          <video id="camera-video" playsinline autoplay muted></video>
+          <!-- Ảnh sau khi chụp -->
+          <img id="captured-image" class="captured" alt="Ảnh đã chụp" />
+          <!-- Canvas ẩn để chụp frame -->
+          <canvas id="capture-canvas" style="display:none"></canvas>
         </div>
+
+        <!-- Các nút điều khiển camera -->
+        <div class="camera-actions">
+          <button id="open-camera-btn" type="button">📷 Mở camera</button>
+          <button id="capture-btn" type="button" disabled>📸 Chụp ảnh</button>
+          <button id="retake-btn" type="button" hidden>🔄 Chụp lại</button>
+          <button id="switch-camera-btn" type="button" hidden>🔀 Đổi camera</button>
+        </div>
+
+        <!-- Fallback: chọn ảnh có sẵn / dùng input capture của hệ điều hành -->
+        <div class="camera-actions">
+          <label for="file-input" style="flex:1;min-width:120px;">
+            <span style="display:block;text-align:center;padding:10px 12px;border-radius:10px;border:1px solid #ddd;background:#fff;color:#4c1d95;font-weight:600;cursor:pointer;">
+              🖼️ Chọn ảnh từ máy
+            </span>
+          </label>
+          <input id="file-input" type="file" accept="image/*" capture="environment" style="display:none" />
+        </div>
+
+        <div class="camera-error" id="camera-error"></div>
 
         <div class="scan-controls">
           <label class="input-row">
@@ -176,5 +265,216 @@
   <script src="app.js"></script>
   <script src="api.js"></script>
   <script src="register-sw.js"></script>
+
+  <!-- ========== SCRIPT CHO TÍNH NĂNG CHỤP ẢNH SÁCH ========== -->
+  <script>
+  (function () {
+    const frame        = document.getElementById('camera-frame');
+    const video        = document.getElementById('camera-video');
+    const capturedImg  = document.getElementById('captured-image');
+    const canvas       = document.getElementById('capture-canvas');
+    const openBtn      = document.getElementById('open-camera-btn');
+    const captureBtn   = document.getElementById('capture-btn');
+    const retakeBtn    = document.getElementById('retake-btn');
+    const switchBtn    = document.getElementById('switch-camera-btn');
+    const fileInput    = document.getElementById('file-input');
+    const errorBox     = document.getElementById('camera-error');
+
+    let currentStream = null;
+    // 'environment' = camera sau, 'user' = camera trước
+    let facingMode = 'environment';
+    // Ảnh đã chụp dưới dạng dataURL — có thể dùng cho bước AI sau này
+    window.__lastCapturedImage = null;
+
+    function showError(msg) {
+      errorBox.textContent = msg;
+      errorBox.classList.add('show');
+    }
+    function clearError() {
+      errorBox.textContent = '';
+      errorBox.classList.remove('show');
+    }
+
+    function stopStream() {
+      if (currentStream) {
+        currentStream.getTracks().forEach(t => t.stop());
+        currentStream = null;
+      }
+      video.srcObject = null;
+      video.classList.remove('active');
+    }
+
+    async function startCamera() {
+      clearError();
+
+      // Kiểm tra trình duyệt có hỗ trợ không
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showError('Trình duyệt không hỗ trợ camera. Hãy dùng nút "Chọn ảnh từ máy" bên dưới.');
+        return;
+      }
+
+      // getUserMedia yêu cầu HTTPS hoặc localhost
+      const isSecure = location.protocol === 'https:' ||
+                       location.hostname === 'localhost' ||
+                       location.hostname === '127.0.0.1';
+      if (!isSecure) {
+        showError('Camera chỉ hoạt động trên HTTPS hoặc localhost. Hãy deploy app hoặc dùng "Chọn ảnh từ máy".');
+        return;
+      }
+
+      stopStream();
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: facingMode },
+            width:  { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        });
+        currentStream = stream;
+        video.srcObject = stream;
+        await video.play().catch(() => {});
+
+        // Hiện video, ẩn ảnh đã chụp
+        capturedImg.classList.remove('active');
+        capturedImg.removeAttribute('src');
+        video.classList.add('active');
+        frame.classList.add('has-media');
+
+        captureBtn.disabled = false;
+        retakeBtn.hidden = true;
+        switchBtn.hidden = false;
+        openBtn.textContent = '⏹ Tắt camera';
+        openBtn.dataset.state = 'on';
+      } catch (err) {
+        console.error('[camera] getUserMedia error:', err);
+        let msg = 'Không mở được camera.';
+        if (err && err.name === 'NotAllowedError') {
+          msg = 'Bạn đã từ chối quyền camera. Hãy bật lại trong cài đặt trình duyệt.';
+        } else if (err && err.name === 'NotFoundError') {
+          msg = 'Không tìm thấy camera trên thiết bị.';
+        } else if (err && err.name === 'NotReadableError') {
+          msg = 'Camera đang được app khác sử dụng.';
+        } else if (err && err.message) {
+          msg += ' (' + err.message + ')';
+        }
+        showError(msg);
+      }
+    }
+
+    function capturePhoto() {
+      if (!currentStream) {
+        showError('Hãy mở camera trước khi chụp.');
+        return;
+      }
+      const w = video.videoWidth  || 1280;
+      const h = video.videoHeight || 720;
+      canvas.width  = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, w, h);
+
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+      window.__lastCapturedImage = dataUrl;
+
+      capturedImg.src = dataUrl;
+      capturedImg.classList.add('active');
+      video.classList.remove('active');
+
+      stopStream();
+
+      captureBtn.disabled = true;
+      retakeBtn.hidden = false;
+      switchBtn.hidden = true;
+      openBtn.textContent = '📷 Mở camera';
+      openBtn.dataset.state = 'off';
+
+      // Báo cho phần code khác (app.js / api.js) biết đã có ảnh mới
+      document.dispatchEvent(new CustomEvent('book:image-captured', {
+        detail: { dataUrl: dataUrl }
+      }));
+    }
+
+    function retake() {
+      capturedImg.classList.remove('active');
+      capturedImg.removeAttribute('src');
+      window.__lastCapturedImage = null;
+      startCamera();
+    }
+
+    function toggleCamera() {
+      if (openBtn.dataset.state === 'on') {
+        stopStream();
+        captureBtn.disabled = true;
+        switchBtn.hidden = true;
+        openBtn.textContent = '📷 Mở camera';
+        openBtn.dataset.state = 'off';
+        if (!capturedImg.classList.contains('active')) {
+          frame.classList.remove('has-media');
+        }
+      } else {
+        startCamera();
+      }
+    }
+
+    function switchCamera() {
+      facingMode = (facingMode === 'environment') ? 'user' : 'environment';
+      startCamera();
+    }
+
+    function handleFilePick(e) {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      clearError();
+      const reader = new FileReader();
+      reader.onload = function (ev) {
+        const dataUrl = ev.target.result;
+        window.__lastCapturedImage = dataUrl;
+        stopStream();
+        capturedImg.src = dataUrl;
+        capturedImg.classList.add('active');
+        video.classList.remove('active');
+        frame.classList.add('has-media');
+        captureBtn.disabled = true;
+        retakeBtn.hidden = false;
+        switchBtn.hidden = true;
+        openBtn.textContent = '📷 Mở camera';
+        openBtn.dataset.state = 'off';
+
+        document.dispatchEvent(new CustomEvent('book:image-captured', {
+          detail: { dataUrl: dataUrl }
+        }));
+      };
+      reader.readAsDataURL(file);
+      // reset để có thể chọn lại cùng 1 file
+      fileInput.value = '';
+    }
+
+    openBtn.addEventListener('click', toggleCamera);
+    captureBtn.addEventListener('click', capturePhoto);
+    retakeBtn.addEventListener('click', retake);
+    switchBtn.addEventListener('click', switchCamera);
+    fileInput.addEventListener('change', handleFilePick);
+
+    // Khi user rời tab Quét AI thì tắt camera để đỡ tốn pin/quyền riêng tư
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (btn.dataset.target !== 'scan') {
+          stopStream();
+          captureBtn.disabled = true;
+          switchBtn.hidden = true;
+          openBtn.textContent = '📷 Mở camera';
+          openBtn.dataset.state = 'off';
+        }
+      });
+    });
+
+    // Tắt camera khi đóng trang
+    window.addEventListener('pagehide', stopStream);
+    window.addEventListener('beforeunload', stopStream);
+  })();
+  </script>
 </body>
 </html>
