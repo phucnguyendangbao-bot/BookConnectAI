@@ -180,10 +180,37 @@ $('#save-api-key').addEventListener('click', () => {
   showToast('✓ Đã lưu API Key');
 });
 
-// Đọc lại key đã lưu (chỉ hiển thị có lưu hay chưa, không show key)
-window.addEventListener('load', () => {
+// Đọc lại key đã lưu + tự kiểm tra xem có proxy /api/summary không
+window.addEventListener('load', async () => {
   if (localStorage.getItem('claude_api_key')) {
     $('#api-key-input').placeholder = '••••••••••• (đã lưu)';
+  }
+
+  // Kiểm tra proxy bằng cách HEAD/OPTIONS (nhẹ)
+  const statusEl = $('#ai-status');
+  const localSection = $('#local-key-section');
+  try {
+    const probe = await fetch('/api/summary', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bookName: '__probe__' })
+    });
+    if (probe.status === 404) throw new Error('no-proxy');
+    // 200 hoặc 500 (key chưa set) đều có nghĩa là proxy tồn tại
+    if (probe.status === 200) {
+      statusEl.textContent = '✓ Đã kết nối server (key giấu)';
+      statusEl.style.color = '#16A34A';
+    } else if (probe.status === 500) {
+      statusEl.textContent = '⚠ Server thiếu CLAUDE_API_KEY';
+      statusEl.style.color = '#EA580C';
+    } else {
+      statusEl.textContent = '✓ Có proxy /api/summary';
+      statusEl.style.color = '#16A34A';
+    }
+  } catch (err) {
+    // Không có proxy → cho phép local key
+    statusEl.textContent = '⚠ Đang chạy local (cần key trong trình duyệt)';
+    statusEl.style.color = '#EA580C';
+    localSection.style.display = '';
   }
 });
 
