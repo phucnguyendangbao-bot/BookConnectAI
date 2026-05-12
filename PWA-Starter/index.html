@@ -5,10 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#7C3AED" />
 
-  <!-- PWA: liên kết tới manifest để trình duyệt biết đây là app cài được -->
+  <!-- PWA -->
   <link rel="manifest" href="manifest.webmanifest" />
-
-  <!-- iOS không hỗ trợ manifest đầy đủ, cần meta riêng -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="BookConnect AI" />
@@ -18,13 +16,12 @@
 
   <link rel="stylesheet" href="styles.css" />
 
-  <!-- CSS bổ sung cho camera (đặt inline để không phải sửa styles.css) -->
+  <!-- CSS bổ sung cho camera (inline để không phải sửa styles.css) -->
   <style>
     .camera-frame {
       position: relative;
       overflow: hidden;
     }
-    .camera-frame video,
     .camera-frame img.captured {
       position: absolute;
       inset: 0;
@@ -35,38 +32,37 @@
       background: #000;
       border-radius: inherit;
     }
-    .camera-frame video.active,
-    .camera-frame img.captured.active {
-      display: block;
-    }
-    .camera-frame.has-media .camera-icon {
-      display: none;
-    }
+    .camera-frame img.captured.active { display: block; }
+    .camera-frame.has-media .camera-icon { display: none; }
+
     .camera-actions {
       display: flex;
       gap: 8px;
       margin-top: 10px;
       flex-wrap: wrap;
     }
-    .camera-actions button {
+    .camera-actions .btn {
       flex: 1;
-      min-width: 120px;
-      padding: 10px 12px;
+      min-width: 130px;
+      padding: 12px 14px;
       border-radius: 10px;
       border: 1px solid #ddd;
       background: #f5f3ff;
       color: #4c1d95;
       font-weight: 600;
       cursor: pointer;
+      text-align: center;
+      display: inline-block;
     }
-    .camera-actions button:disabled {
+    .camera-actions .btn.secondary {
+      background: #fff;
+    }
+    .camera-actions .btn:disabled,
+    .camera-actions .btn.disabled {
       opacity: .5;
       cursor: not-allowed;
     }
-    .camera-actions .danger {
-      background: #fef2f2;
-      color: #b91c1c;
-    }
+
     .camera-error {
       margin-top: 8px;
       padding: 8px 10px;
@@ -78,14 +74,24 @@
       display: none;
     }
     .camera-error.show { display: block; }
+
+    .ai-loading {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid #ddd;
+      border-top-color: #7C3AED;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
 
-  <!-- Khung điện thoại để xem trên desktop -->
   <div class="phone-shell">
 
-    <!-- ========== KHU VỰC NỘI DUNG TAB ========== -->
     <main id="content">
       <!-- Tab Home -->
       <section class="tab" data-tab="home">
@@ -115,30 +121,17 @@
           <div class="camera-icon">📷</div>
           <div class="scan-line" id="scan-line"></div>
 
-          <!-- Video stream từ camera -->
-          <video id="camera-video" playsinline autoplay muted></video>
-          <!-- Ảnh sau khi chụp -->
-          <img id="captured-image" class="captured" alt="Ảnh đã chụp" />
-          <!-- Canvas ẩn để chụp frame -->
-          <canvas id="capture-canvas" style="display:none"></canvas>
+          <!-- Ảnh sau khi chụp / chọn -->
+          <img id="captured-image" class="captured" alt="Ảnh sách" />
         </div>
 
-        <!-- Các nút điều khiển camera -->
+        <!-- Chỉ còn 2 nút: chụp ảnh & chọn ảnh từ máy -->
         <div class="camera-actions">
-          <button id="open-camera-btn" type="button">📷 Mở camera</button>
-          <button id="capture-btn" type="button" disabled>📸 Chụp ảnh</button>
-          <button id="retake-btn" type="button" hidden>🔄 Chụp lại</button>
-          <button id="switch-camera-btn" type="button" hidden>🔀 Đổi camera</button>
-        </div>
+          <label class="btn" for="camera-input">📸 Chụp ảnh</label>
+          <input id="camera-input" type="file" accept="image/*" capture="environment" hidden />
 
-        <!-- Fallback: chọn ảnh có sẵn / dùng input capture của hệ điều hành -->
-        <div class="camera-actions">
-          <label for="file-input" style="flex:1;min-width:120px;">
-            <span style="display:block;text-align:center;padding:10px 12px;border-radius:10px;border:1px solid #ddd;background:#fff;color:#4c1d95;font-weight:600;cursor:pointer;">
-              🖼️ Chọn ảnh từ máy
-            </span>
-          </label>
-          <input id="file-input" type="file" accept="image/*" capture="environment" style="display:none" />
+          <label class="btn secondary" for="gallery-input">🖼️ Chọn từ thư viện</label>
+          <input id="gallery-input" type="file" accept="image/*" hidden />
         </div>
 
         <div class="camera-error" id="camera-error"></div>
@@ -148,30 +141,35 @@
             Tên sách cần tóm tắt:
             <input id="book-name-input" type="text" placeholder="VD: Đắc Nhân Tâm" />
           </label>
-          <button id="scan-button" class="primary-btn">✨ Bắt đầu quét AI</button>
+
+          <!-- Hai hành động AI -->
+          <div class="camera-actions">
+            <button id="analyze-btn" class="btn" type="button" disabled>🧠 AI nhận xét ảnh</button>
+            <button id="scan-button" class="primary-btn">✨ Bắt đầu quét AI</button>
+          </div>
         </div>
 
         <div id="summary-box" class="summary-box" hidden>
           <h3>🤖 AI Tóm tắt</h3>
           <p id="summary-text"></p>
         </div>
+
+        <div id="review-box" class="summary-box" hidden style="margin-top:12px;">
+          <h3>🧠 AI Nhận xét ảnh</h3>
+          <p id="review-text"></p>
+        </div>
       </section>
 
       <!-- Tab Market -->
       <section class="tab" data-tab="market" hidden>
         <h1 class="page-title">🛒 Chợ sách</h1>
-
-        <div class="gps-banner">
-          📍 <span>Hiển thị sách gần bạn</span>
-        </div>
-
+        <div class="gps-banner">📍 <span>Hiển thị sách gần bạn</span></div>
         <div class="filter-bar" id="filter-bar">
           <button class="filter-chip active" data-filter="all">Tất cả</button>
           <button class="filter-chip" data-filter="Bán">Bán</button>
           <button class="filter-chip" data-filter="Thuê">Thuê</button>
           <button class="filter-chip" data-filter="Đổi">Đổi</button>
         </div>
-
         <div id="listing-list"></div>
       </section>
 
@@ -206,7 +204,6 @@
           </div>
         </div>
 
-        <!-- Trạng thái AI (key được giấu trên server qua /api/summary) -->
         <div class="settings-group">
           <div class="setting-row">
             <span>🤖 AI Tóm tắt</span>
@@ -214,77 +211,53 @@
           </div>
         </div>
 
-        <!-- Phần API key chỉ dành cho LOCAL dev không có proxy -->
         <details class="settings-group" id="local-key-section" style="display:none">
-          <summary style="cursor:pointer;padding:14px 16px;">
-            🔧 Tuỳ chọn nâng cao (chỉ local dev)
-          </summary>
+          <summary style="cursor:pointer;padding:14px 16px;">🔧 Tuỳ chọn nâng cao (chỉ local dev)</summary>
           <div class="setting-row column">
             <span>🔑 Claude API Key (local fallback)</span>
             <input id="api-key-input" type="password" placeholder="sk-ant-..." />
             <button id="save-api-key" class="secondary-btn">Lưu vào trình duyệt</button>
-            <small class="muted">Chỉ dùng khi chạy local không có proxy. Khi deploy Vercel thì không cần.</small>
+            <small class="muted">Chỉ dùng khi chạy local không có proxy.</small>
           </div>
         </details>
 
-        <!-- Nút cài app (chỉ hiện khi trình duyệt hỗ trợ) -->
         <button id="install-btn" class="primary-btn install-btn" hidden>📲 Cài app vào máy</button>
-
         <button class="logout-btn">Đăng xuất</button>
       </section>
     </main>
 
-    <!-- ========== THANH TAB DƯỚI ========== -->
     <nav class="tabbar">
-      <button class="tab-btn active" data-target="home">
-        <div class="tab-icon">🏠</div>
-        <div class="tab-label">Trang chủ</div>
-      </button>
-      <button class="tab-btn" data-target="library">
-        <div class="tab-icon">📚</div>
-        <div class="tab-label">Tủ sách</div>
-      </button>
-      <button class="tab-btn" data-target="scan">
-        <div class="tab-icon">🔍</div>
-        <div class="tab-label">Quét AI</div>
-      </button>
-      <button class="tab-btn" data-target="market">
-        <div class="tab-icon">🛒</div>
-        <div class="tab-label">Chợ sách</div>
-      </button>
-      <button class="tab-btn" data-target="profile">
-        <div class="tab-icon">👤</div>
-        <div class="tab-label">Cá nhân</div>
-      </button>
+      <button class="tab-btn active" data-target="home"><div class="tab-icon">🏠</div><div class="tab-label">Trang chủ</div></button>
+      <button class="tab-btn" data-target="library"><div class="tab-icon">📚</div><div class="tab-label">Tủ sách</div></button>
+      <button class="tab-btn" data-target="scan"><div class="tab-icon">🔍</div><div class="tab-label">Quét AI</div></button>
+      <button class="tab-btn" data-target="market"><div class="tab-icon">🛒</div><div class="tab-label">Chợ sách</div></button>
+      <button class="tab-btn" data-target="profile"><div class="tab-icon">👤</div><div class="tab-label">Cá nhân</div></button>
     </nav>
   </div>
 
-  <!-- Toast nhỏ để thông báo -->
   <div id="toast" class="toast" hidden></div>
 
   <script src="app.js"></script>
   <script src="api.js"></script>
   <script src="register-sw.js"></script>
 
-  <!-- ========== SCRIPT CHO TÍNH NĂNG CHỤP ẢNH SÁCH ========== -->
+  <!-- ========== SCRIPT: Chụp / chọn ảnh + AI nhận xét ========== -->
   <script>
   (function () {
     const frame        = document.getElementById('camera-frame');
-    const video        = document.getElementById('camera-video');
     const capturedImg  = document.getElementById('captured-image');
-    const canvas       = document.getElementById('capture-canvas');
-    const openBtn      = document.getElementById('open-camera-btn');
-    const captureBtn   = document.getElementById('capture-btn');
-    const retakeBtn    = document.getElementById('retake-btn');
-    const switchBtn    = document.getElementById('switch-camera-btn');
-    const fileInput    = document.getElementById('file-input');
+    const cameraInput  = document.getElementById('camera-input');
+    const galleryInput = document.getElementById('gallery-input');
+    const analyzeBtn   = document.getElementById('analyze-btn');
     const errorBox     = document.getElementById('camera-error');
+    const reviewBox    = document.getElementById('review-box');
+    const reviewText   = document.getElementById('review-text');
+    const bookNameInput= document.getElementById('book-name-input');
 
-    let currentStream = null;
-    // 'environment' = camera sau, 'user' = camera trước
-    let facingMode = 'environment';
-    // Ảnh đã chụp dưới dạng dataURL — có thể dùng cho bước AI sau này
-    window.__lastCapturedImage = null;
+    // Lưu ảnh hiện tại để các phần khác có thể truy cập
+    window.__lastCapturedImage = null;     // dataURL đầy đủ "data:image/...;base64,..."
+    window.__lastCapturedBase64 = null;    // chỉ phần base64
+    window.__lastCapturedMime = null;      // ví dụ "image/jpeg"
 
     function showError(msg) {
       errorBox.textContent = msg;
@@ -295,185 +268,156 @@
       errorBox.classList.remove('show');
     }
 
-    function stopStream() {
-      if (currentStream) {
-        currentStream.getTracks().forEach(t => t.stop());
-        currentStream = null;
-      }
-      video.srcObject = null;
-      video.classList.remove('active');
+    // Nén ảnh để gửi AI không bị quá nặng
+    function compressImage(file, maxSize = 1280, quality = 0.85) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = reject;
+        reader.onload = () => {
+          const img = new Image();
+          img.onerror = reject;
+          img.onload = () => {
+            let { width, height } = img;
+            if (width > maxSize || height > maxSize) {
+              if (width >= height) {
+                height = Math.round(height * (maxSize / width));
+                width = maxSize;
+              } else {
+                width = Math.round(width * (maxSize / height));
+                height = maxSize;
+              }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+            const dataUrl = canvas.toDataURL('image/jpeg', quality);
+            resolve(dataUrl);
+          };
+          img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+      });
     }
 
-    async function startCamera() {
-      clearError();
-
-      // Kiểm tra trình duyệt có hỗ trợ không
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        showError('Trình duyệt không hỗ trợ camera. Hãy dùng nút "Chọn ảnh từ máy" bên dưới.');
-        return;
-      }
-
-      // getUserMedia yêu cầu HTTPS hoặc localhost
-      const isSecure = location.protocol === 'https:' ||
-                       location.hostname === 'localhost' ||
-                       location.hostname === '127.0.0.1';
-      if (!isSecure) {
-        showError('Camera chỉ hoạt động trên HTTPS hoặc localhost. Hãy deploy app hoặc dùng "Chọn ảnh từ máy".');
-        return;
-      }
-
-      stopStream();
-
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: facingMode },
-            width:  { ideal: 1280 },
-            height: { ideal: 720 }
-          },
-          audio: false
-        });
-        currentStream = stream;
-        video.srcObject = stream;
-        await video.play().catch(() => {});
-
-        // Hiện video, ẩn ảnh đã chụp
-        capturedImg.classList.remove('active');
-        capturedImg.removeAttribute('src');
-        video.classList.add('active');
-        frame.classList.add('has-media');
-
-        captureBtn.disabled = false;
-        retakeBtn.hidden = true;
-        switchBtn.hidden = false;
-        openBtn.textContent = '⏹ Tắt camera';
-        openBtn.dataset.state = 'on';
-      } catch (err) {
-        console.error('[camera] getUserMedia error:', err);
-        let msg = 'Không mở được camera.';
-        if (err && err.name === 'NotAllowedError') {
-          msg = 'Bạn đã từ chối quyền camera. Hãy bật lại trong cài đặt trình duyệt.';
-        } else if (err && err.name === 'NotFoundError') {
-          msg = 'Không tìm thấy camera trên thiết bị.';
-        } else if (err && err.name === 'NotReadableError') {
-          msg = 'Camera đang được app khác sử dụng.';
-        } else if (err && err.message) {
-          msg += ' (' + err.message + ')';
-        }
-        showError(msg);
-      }
-    }
-
-    function capturePhoto() {
-      if (!currentStream) {
-        showError('Hãy mở camera trước khi chụp.');
-        return;
-      }
-      const w = video.videoWidth  || 1280;
-      const h = video.videoHeight || 720;
-      canvas.width  = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0, w, h);
-
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-      window.__lastCapturedImage = dataUrl;
-
-      capturedImg.src = dataUrl;
-      capturedImg.classList.add('active');
-      video.classList.remove('active');
-
-      stopStream();
-
-      captureBtn.disabled = true;
-      retakeBtn.hidden = false;
-      switchBtn.hidden = true;
-      openBtn.textContent = '📷 Mở camera';
-      openBtn.dataset.state = 'off';
-
-      // Báo cho phần code khác (app.js / api.js) biết đã có ảnh mới
-      document.dispatchEvent(new CustomEvent('book:image-captured', {
-        detail: { dataUrl: dataUrl }
-      }));
-    }
-
-    function retake() {
-      capturedImg.classList.remove('active');
-      capturedImg.removeAttribute('src');
-      window.__lastCapturedImage = null;
-      startCamera();
-    }
-
-    function toggleCamera() {
-      if (openBtn.dataset.state === 'on') {
-        stopStream();
-        captureBtn.disabled = true;
-        switchBtn.hidden = true;
-        openBtn.textContent = '📷 Mở camera';
-        openBtn.dataset.state = 'off';
-        if (!capturedImg.classList.contains('active')) {
-          frame.classList.remove('has-media');
-        }
-      } else {
-        startCamera();
-      }
-    }
-
-    function switchCamera() {
-      facingMode = (facingMode === 'environment') ? 'user' : 'environment';
-      startCamera();
-    }
-
-    function handleFilePick(e) {
-      const file = e.target.files && e.target.files[0];
+    async function handleFile(file) {
       if (!file) return;
       clearError();
-      const reader = new FileReader();
-      reader.onload = function (ev) {
-        const dataUrl = ev.target.result;
+      if (!file.type.startsWith('image/')) {
+        showError('File bạn chọn không phải ảnh.');
+        return;
+      }
+      try {
+        const dataUrl = await compressImage(file);
+        const [, mime, base64] = dataUrl.match(/^data:(image\/[a-zA-Z]+);base64,(.+)$/) || [];
         window.__lastCapturedImage = dataUrl;
-        stopStream();
+        window.__lastCapturedBase64 = base64 || null;
+        window.__lastCapturedMime = mime || 'image/jpeg';
+
         capturedImg.src = dataUrl;
         capturedImg.classList.add('active');
-        video.classList.remove('active');
         frame.classList.add('has-media');
-        captureBtn.disabled = true;
-        retakeBtn.hidden = false;
-        switchBtn.hidden = true;
-        openBtn.textContent = '📷 Mở camera';
-        openBtn.dataset.state = 'off';
+
+        analyzeBtn.disabled = false;
+        reviewBox.hidden = true;
+        reviewText.textContent = '';
 
         document.dispatchEvent(new CustomEvent('book:image-captured', {
-          detail: { dataUrl: dataUrl }
+          detail: { dataUrl }
         }));
-      };
-      reader.readAsDataURL(file);
-      // reset để có thể chọn lại cùng 1 file
-      fileInput.value = '';
+      } catch (err) {
+        console.error('[image] xử lý ảnh lỗi:', err);
+        showError('Không đọc được ảnh. Hãy thử ảnh khác.');
+      }
     }
 
-    openBtn.addEventListener('click', toggleCamera);
-    captureBtn.addEventListener('click', capturePhoto);
-    retakeBtn.addEventListener('click', retake);
-    switchBtn.addEventListener('click', switchCamera);
-    fileInput.addEventListener('change', handleFilePick);
-
-    // Khi user rời tab Quét AI thì tắt camera để đỡ tốn pin/quyền riêng tư
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (btn.dataset.target !== 'scan') {
-          stopStream();
-          captureBtn.disabled = true;
-          switchBtn.hidden = true;
-          openBtn.textContent = '📷 Mở camera';
-          openBtn.dataset.state = 'off';
-        }
-      });
+    cameraInput.addEventListener('change', (e) => {
+      handleFile(e.target.files && e.target.files[0]);
+      e.target.value = '';
+    });
+    galleryInput.addEventListener('change', (e) => {
+      handleFile(e.target.files && e.target.files[0]);
+      e.target.value = '';
     });
 
-    // Tắt camera khi đóng trang
-    window.addEventListener('pagehide', stopStream);
-    window.addEventListener('beforeunload', stopStream);
+    // ===== AI nhận xét ảnh =====
+    // Ưu tiên gọi proxy /api/analyze (server giữ API key).
+    // Nếu không có proxy mà có sẵn window.callClaudeAPI (do api.js export),
+    // sẽ fallback sang gọi trực tiếp.
+    async function analyzeImage() {
+      if (!window.__lastCapturedBase64) {
+        showError('Bạn chưa có ảnh để nhận xét.');
+        return;
+      }
+      clearError();
+
+      const bookName = (bookNameInput.value || '').trim();
+      const prompt = bookName
+        ? `Đây là ảnh bìa hoặc trang sách "${bookName}". Hãy nhận xét ngắn gọn (3-5 câu) bằng tiếng Việt về: bìa/thiết kế, chất lượng ảnh, thông tin có thể đọc được, gợi ý độc giả phù hợp.`
+        : `Đây là ảnh một cuốn sách. Hãy nhận xét ngắn gọn (3-5 câu) bằng tiếng Việt về: tên sách nếu nhìn thấy, bìa/thiết kế, chất lượng ảnh, và gợi ý độc giả phù hợp.`;
+
+      analyzeBtn.disabled = true;
+      const originalText = analyzeBtn.textContent;
+      analyzeBtn.innerHTML = '<span class="ai-loading"></span> Đang phân tích...';
+      reviewBox.hidden = false;
+      reviewText.textContent = 'Đang gửi ảnh lên AI...';
+
+      try {
+        const text = await callImageAI({
+          base64: window.__lastCapturedBase64,
+          mime:   window.__lastCapturedMime,
+          prompt: prompt,
+          bookName: bookName
+        });
+        reviewText.textContent = text || 'AI không trả về nội dung.';
+      } catch (err) {
+        console.error('[ai] phân tích ảnh lỗi:', err);
+        reviewText.textContent = '';
+        showError('Không gọi được AI: ' + (err && err.message ? err.message : err));
+        reviewBox.hidden = true;
+      } finally {
+        analyzeBtn.disabled = false;
+        analyzeBtn.textContent = originalText;
+      }
+    }
+
+    async function callImageAI({ base64, mime, prompt, bookName }) {
+      // 1) Thử proxy server (an toàn nhất - không lộ API key)
+      try {
+        const res = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: base64, mime, prompt, bookName })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          // chấp nhận nhiều schema phổ biến
+          return data.text || data.summary || data.review ||
+                 (Array.isArray(data.content) && data.content[0] && data.content[0].text) ||
+                 JSON.stringify(data);
+        }
+        if (res.status !== 404) {
+          throw new Error('Server trả về ' + res.status);
+        }
+        // 404 -> không có proxy, rơi xuống fallback
+      } catch (e) {
+        // network error -> thử fallback
+        console.warn('[ai] /api/analyze không khả dụng:', e);
+      }
+
+      // 2) Fallback: nếu api.js có export callClaudeAPI
+      if (typeof window.callClaudeAPI === 'function') {
+        return await window.callClaudeAPI({
+          prompt,
+          image: { base64, mime },
+          bookName
+        });
+      }
+
+      throw new Error('Chưa cấu hình endpoint /api/analyze trên server.');
+    }
+
+    analyzeBtn.addEventListener('click', analyzeImage);
   })();
   </script>
 </body>
