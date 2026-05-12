@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#7C3AED" />
+
+  <!-- PWA: liên kết tới manifest để trình duyệt biết đây là app cài được -->
+  <link rel="manifest" href="manifest.webmanifest" />
+
+  <!-- iOS không hỗ trợ manifest đầy đủ, cần meta riêng -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="BookConnect AI" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+
+  <title>BookConnect AI — PWA</title>
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- Khung điện thoại để xem trên desktop -->
+  <div class="phone-shell">
+
+    <!-- ========== KHU VỰC NỘI DUNG TAB ========== -->
+    <main id="content">
+      <!-- Tab Home -->
+      <section class="tab" data-tab="home">
+        <div class="banner">
+          <div class="banner-greeting">Chào bạn 👋</div>
+          <div class="banner-title">Hôm nay đọc gì nhỉ?</div>
+        </div>
+
+        <h2 class="section-title">✨ Gợi ý cho bạn</h2>
+        <div class="hscroll" id="suggested-list"></div>
+
+        <h2 class="section-title">📖 Đang đọc</h2>
+        <div id="reading-list"></div>
+      </section>
+
+      <!-- Tab Library -->
+      <section class="tab" data-tab="library" hidden>
+        <h1 class="page-title">📚 Tủ sách</h1>
+        <div id="library-list"></div>
+      </section>
+
+      <!-- Tab Scan AI -->
+      <section class="tab" data-tab="scan" hidden>
+        <h1 class="page-title">🔍 Quét AI</h1>
+
+        <div class="camera-frame">
+          <div class="camera-icon">📷</div>
+          <div class="scan-line" id="scan-line"></div>
+        </div>
+
+        <div class="scan-controls">
+          <label class="input-row">
+            Tên sách cần tóm tắt:
+            <input id="book-name-input" type="text" placeholder="VD: Đắc Nhân Tâm" />
+          </label>
+          <button id="scan-button" class="primary-btn">✨ Bắt đầu quét AI</button>
+        </div>
+
+        <div id="summary-box" class="summary-box" hidden>
+          <h3>🤖 AI Tóm tắt</h3>
+          <p id="summary-text"></p>
+        </div>
+      </section>
+
+      <!-- Tab Market -->
+      <section class="tab" data-tab="market" hidden>
+        <h1 class="page-title">🛒 Chợ sách</h1>
+
+        <div class="gps-banner">
+          📍 <span>Hiển thị sách gần bạn</span>
+        </div>
+
+        <div class="filter-bar" id="filter-bar">
+          <button class="filter-chip active" data-filter="all">Tất cả</button>
+          <button class="filter-chip" data-filter="Bán">Bán</button>
+          <button class="filter-chip" data-filter="Thuê">Thuê</button>
+          <button class="filter-chip" data-filter="Đổi">Đổi</button>
+        </div>
+
+        <div id="listing-list"></div>
+      </section>
+
+      <!-- Tab Profile -->
+      <section class="tab" data-tab="profile" hidden>
+        <h1 class="page-title">👤 Cá nhân</h1>
+
+        <div class="profile-header">
+          <div class="avatar">N</div>
+          <div class="profile-name">Nguyễn</div>
+          <div class="profile-email">phucndbfct31041@gmail.com</div>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-icon">📚</div><div class="stat-value">12</div><div class="stat-label">Đã đọc</div></div>
+          <div class="stat-card"><div class="stat-icon">❤️</div><div class="stat-value">47</div><div class="stat-label">Lượt thích</div></div>
+          <div class="stat-card"><div class="stat-icon">⭐</div><div class="stat-value">8</div><div class="stat-label">Đánh giá</div></div>
+        </div>
+
+        <div class="settings-group">
+          <div class="setting-row">
+            <span>🌙 Chế độ tối</span>
+            <label class="switch"><input type="checkbox" id="dark-toggle" /><span class="slider"></span></label>
+          </div>
+          <div class="setting-row">
+            <span>🔔 Thông báo</span>
+            <label class="switch"><input type="checkbox" checked /><span class="slider"></span></label>
+          </div>
+          <div class="setting-row">
+            <span>🌐 Ngôn ngữ</span>
+            <span class="muted">Tiếng Việt ›</span>
+          </div>
+        </div>
+
+        <!-- Cài đặt API key cho Claude (chỉ chạy local) -->
+        <div class="settings-group">
+          <div class="setting-row column">
+            <span>🔑 Claude API Key (cho tab Quét AI)</span>
+            <input id="api-key-input" type="password" placeholder="sk-ant-..." />
+            <button id="save-api-key" class="secondary-btn">Lưu</button>
+            <small class="muted">Lưu cục bộ trong trình duyệt. Chỉ dùng cho mục đích học tập.</small>
+          </div>
+        </div>
+
+        <!-- Nút cài app (chỉ hiện khi trình duyệt hỗ trợ) -->
+        <button id="install-btn" class="primary-btn install-btn" hidden>📲 Cài app vào máy</button>
+
+        <button class="logout-btn">Đăng xuất</button>
+      </section>
+    </main>
+
+    <!-- ========== THANH TAB DƯỚI ========== -->
+    <nav class="tabbar">
+      <button class="tab-btn active" data-target="home">
+        <div class="tab-icon">🏠</div>
+        <div class="tab-label">Trang chủ</div>
+      </button>
+      <button class="tab-btn" data-target="library">
+        <div class="tab-icon">📚</div>
+        <div class="tab-label">Tủ sách</div>
+      </button>
+      <button class="tab-btn" data-target="scan">
+        <div class="tab-icon">🔍</div>
+        <div class="tab-label">Quét AI</div>
+      </button>
+      <button class="tab-btn" data-target="market">
+        <div class="tab-icon">🛒</div>
+        <div class="tab-label">Chợ sách</div>
+      </button>
+      <button class="tab-btn" data-target="profile">
+        <div class="tab-icon">👤</div>
+        <div class="tab-label">Cá nhân</div>
+      </button>
+    </nav>
+  </div>
+
+  <!-- Toast nhỏ để thông báo -->
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js"></script>
+  <script src="api.js"></script>
+  <script src="register-sw.js"></script>
+</body>
+</html>
