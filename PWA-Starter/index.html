@@ -125,13 +125,28 @@
           <img id="captured-image" class="captured" alt="Ảnh sách" />
         </div>
 
-        <!-- Chỉ còn 2 nút: chụp ảnh & chọn ảnh từ máy -->
+        <!-- Chụp ảnh / chọn từ máy -->
         <div class="camera-actions">
           <label class="btn" for="camera-input">📸 Chụp ảnh</label>
           <input id="camera-input" type="file" accept="image/*" capture="environment" hidden />
 
           <label class="btn secondary" for="gallery-input">🖼️ Chọn từ thư viện</label>
           <input id="gallery-input" type="file" accept="image/*" hidden />
+        </div>
+
+        <!-- Dán URL ảnh sách -->
+        <div class="camera-actions" style="margin-top:6px;">
+          <input id="image-url-input" type="url"
+                 placeholder="🔗 Dán URL ảnh sách (https://...)"
+                 style="flex:2;min-width:200px;padding:10px 12px;border:1px solid #ddd;border-radius:10px;font-size:14px;" />
+          <button id="load-url-btn" class="btn secondary" type="button">⬇️ Tải ảnh</button>
+        </div>
+
+        <!-- Tự động tìm ảnh bìa từ Internet theo tên sách -->
+        <div class="camera-actions" style="margin-top:6px;">
+          <button id="search-cover-btn" class="btn" type="button" style="flex:1;">
+            🔍 Tìm ảnh bìa từ Internet
+          </button>
         </div>
 
         <div class="camera-error" id="camera-error"></div>
@@ -248,6 +263,9 @@
     const capturedImg  = document.getElementById('captured-image');
     const cameraInput  = document.getElementById('camera-input');
     const galleryInput = document.getElementById('gallery-input');
+    const urlInput     = document.getElementById('image-url-input');
+    const loadUrlBtn   = document.getElementById('load-url-btn');
+    const searchCoverBtn = document.getElementById('search-cover-btn');
     const analyzeBtn   = document.getElementById('analyze-btn');
     const errorBox     = document.getElementById('camera-error');
     const reviewBox    = document.getElementById('review-box');
@@ -258,6 +276,7 @@
     window.__lastCapturedImage = null;     // dataURL đầy đủ "data:image/...;base64,..."
     window.__lastCapturedBase64 = null;    // chỉ phần base64
     window.__lastCapturedMime = null;      // ví dụ "image/jpeg"
+    window.__lastCapturedUrl = null;       // URL ảnh nếu user dán từ link
 
     function showError(msg) {
       errorBox.textContent = msg;
@@ -313,6 +332,7 @@
         window.__lastCapturedImage = dataUrl;
         window.__lastCapturedBase64 = base64 || null;
         window.__lastCapturedMime = mime || 'image/jpeg';
+        window.__lastCapturedUrl = null;
 
         capturedImg.src = dataUrl;
         capturedImg.classList.add('active');
@@ -331,6 +351,142 @@
       }
     }
 
+    // ===== Tải ảnh từ URL =====
+    function loadImageFromUrl(rawUrl) {
+      clearError();
+      const url = (rawUrl || '').trim();
+      if (!url) {
+        showError('Hãy dán URL ảnh trước.');
+        return;
+      }
+      if (!/^https?:\/\//i.test(url)) {
+        showError('URL phải bắt đầu bằng http:// hoặc https://');
+        return;
+      }
+
+      // Hiển thị ngay bằng cách set src — trình duyệt sẽ tự fetch
+      const probe = new Image();
+      probe.referrerPolicy = 'no-referrer';
+      probe.onload = () => {
+        capturedImg.src = url;
+        capturedImg.classList.add('active');
+        frame.classList.add('has-media');
+
+        // Reset dữ liệu base64 (server sẽ fetch URL)
+        window.__lastCapturedUrl = url;
+        window.__lastCapturedImage = url;
+        window.__lastCapturedBase64 = null;
+        window.__lastCapturedMime = null;
+
+        analyzeBtn.disabled = false;
+        reviewBox.hidden = true;
+        reviewText.textContent = '';
+
+        document.dispatchEvent(new CustomEvent('book:image-captured', {
+          detail: { url }
+        }));
+      };
+      probe.onerror = () => {
+        showError('Không tải được ảnh từ URL này. Kiểm tra link, hoặc ảnh bị chặn truy cập.');
+      };
+      probe.src = url;
+    }
+
+    loadUrlBtn.addEventListener('click', () => loadImageFromUrl(urlInput.value));
+    urlInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        loadImageFromUrl(urlInput.value);
+      }
+    });
+
+    // ===== Tìm ảnh bìa từ Internet theo tên sách =====
+    // Thử Google Books trước (chất lượng cao, hỗ trợ tiếng Việt tốt),
+    // nếu không có thì fallback sang Open Library.
+    async function searchCoverByName(name) {
+      const query = (name || '').trim();
+      if (!query) {
+        showError('Hãy gõ tên sách vào ô "Tên sách cần tóm tắt" trước.');
+        bookNameInput.focus();
+        return;
+      }
+      clearError();
+
+      const originalText = searchCoverBtn.innerHTML;
+      searchCoverBtn.disabled = true;
+      searchCoverBtn.innerHTML = '<span class="ai-loading"></span> Đang tìm...';
+
+      try {
+        let coverUrl = await searchGoogleBooks(query);
+        if (!coverUrl) coverUrl = await searchOpenLibrary(query);
+
+        if (!coverUrl) {
+          showError('Không tìm thấy ảnh bìa cho "' + query + '". Thử đổi cách gõ tên.');
+          return;
+        }
+
+        urlInput.value = coverUrl;
+        loadImageFromUrl(coverUrl);
+      } catch (err) {
+        console.error('[cover-search]', err);
+        showError('Lỗi khi tìm ảnh bìa: ' + (err && err.message ? err.message : err));
+      } finally {
+        searchCoverBtn.disabled = false;
+        searchCoverBtn.innerHTML = originalText;
+      }
+    }
+
+    async function searchGoogleBooks(query) {
+      const url = 'https://www.googleapis.com/books/v1/volumes?maxResults=5&q='
+                + encodeURIComponent(query);
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (!data.items || !data.items.length) return null;
+
+      // Tìm item đầu tiên có ảnh bìa
+      for (const item of data.items) {
+        const links = item.volumeInfo && item.volumeInfo.imageLinks;
+        if (!links) continue;
+        // Ưu tiên ảnh lớn nhất có sẵn
+        const raw = links.extraLarge || links.large || links.medium ||
+                    links.small     || links.thumbnail || links.smallThumbnail;
+        if (raw) {
+          // Đổi http -> https và bỏ tham số "&edge=curl" để ảnh đẹp hơn
+          return raw.replace(/^http:/, 'https:').replace('&edge=curl', '');
+        }
+      }
+      return null;
+    }
+
+    async function searchOpenLibrary(query) {
+      const url = 'https://openlibrary.org/search.json?limit=5&q='
+                + encodeURIComponent(query);
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (!data.docs || !data.docs.length) return null;
+
+      for (const doc of data.docs) {
+        if (doc.cover_i) {
+          return 'https://covers.openlibrary.org/b/id/' + doc.cover_i + '-L.jpg';
+        }
+      }
+      return null;
+    }
+
+    searchCoverBtn.addEventListener('click', () => {
+      searchCoverByName(bookNameInput.value);
+    });
+
+    // Tiện hơn: bấm Enter trong ô tên sách cũng tự tìm ảnh
+    bookNameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        searchCoverByName(bookNameInput.value);
+      }
+    });
+
     cameraInput.addEventListener('change', (e) => {
       handleFile(e.target.files && e.target.files[0]);
       e.target.value = '';
@@ -345,7 +501,7 @@
     // Nếu không có proxy mà có sẵn window.callClaudeAPI (do api.js export),
     // sẽ fallback sang gọi trực tiếp.
     async function analyzeImage() {
-      if (!window.__lastCapturedBase64) {
+      if (!window.__lastCapturedBase64 && !window.__lastCapturedUrl) {
         showError('Bạn chưa có ảnh để nhận xét.');
         return;
       }
@@ -364,9 +520,10 @@
 
       try {
         const text = await callImageAI({
-          base64: window.__lastCapturedBase64,
-          mime:   window.__lastCapturedMime,
-          prompt: prompt,
+          base64:   window.__lastCapturedBase64,
+          mime:     window.__lastCapturedMime,
+          imageUrl: window.__lastCapturedUrl,
+          prompt:   prompt,
           bookName: bookName
         });
         reviewText.textContent = text || 'AI không trả về nội dung.';
@@ -381,13 +538,13 @@
       }
     }
 
-    async function callImageAI({ base64, mime, prompt, bookName }) {
+    async function callImageAI({ base64, mime, imageUrl, prompt, bookName }) {
       // 1) Thử proxy server (an toàn nhất - không lộ API key)
       try {
         const res = await fetch('/api/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: base64, mime, prompt, bookName })
+          body: JSON.stringify({ image: base64, mime, imageUrl, prompt, bookName })
         });
         if (res.ok) {
           const data = await res.json();
