@@ -86,6 +86,31 @@
       margin-right: 6px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* === Phủ ảnh bìa sách lên ô màu === */
+    [data-cover] {
+      background-image: var(--cover-url) !important;
+      background-size: cover !important;
+      background-position: center !important;
+      background-repeat: no-repeat !important;
+      position: relative;
+      color: transparent !important; /* ẩn tên sách hiện đè lên */
+      text-shadow: none !important;
+    }
+    /* Vẫn cho phép overlay nhẹ nếu app.js có tên sách bên trong */
+    [data-cover]::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.35));
+      border-radius: inherit;
+      pointer-events: none;
+    }
+    [data-cover] * {
+      color: #fff !important;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+      position: relative;
+      z-index: 1;
+    }
   </style>
 </head>
 <body>
@@ -255,6 +280,185 @@
   <script src="app.js"></script>
   <script src="api.js"></script>
   <script src="register-sw.js"></script>
+
+  <!-- ========== ENHANCER: Phủ ảnh bìa sách lên các card ========== -->
+  <script>
+  (function () {
+    // 1) Map sẵn các sách phổ biến để hiển thị ngay không cần fetch
+    const KNOWN_COVERS = {
+      'đắc nhân tâm':
+        'https://covers.openlibrary.org/b/isbn/9780671027032-L.jpg',
+      'tôi tài giỏi, bạn cũng thế':
+        'https://books.google.com/books/publisher/content/images/frontcover/zRz-DwAAQBAJ?fife=w400-h600',
+      'nhà giả kim':
+        'https://covers.openlibrary.org/b/isbn/0061122416-L.jpg',
+      'atomic habits':
+        'https://covers.openlibrary.org/b/isbn/9780735211292-L.jpg',
+      'sapiens':
+        'https://covers.openlibrary.org/b/isbn/9780062316097-L.jpg',
+      'rich dad poor dad':
+        'https://covers.openlibrary.org/b/isbn/9781612680194-L.jpg',
+      'the alchemist':
+        'https://covers.openlibrary.org/b/isbn/0061122416-L.jpg'
+    };
+
+    // 2) Cache để không gọi API lại nhiều lần cho cùng 1 tên
+    const cache = new Map();
+
+    function normalize(s) {
+      return (s || '')
+        .toLowerCase()
+        .normalize('NFC')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    async function searchGoogleBooks(query) {
+      try {
+        const r = await fetch(
+          'https://www.googleapis.com/books/v1/volumes?maxResults=3&q=' +
+          encodeURIComponent(query)
+        );
+        if (!r.ok) return null;
+        const d = await r.json();
+        for (const it of d.items || []) {
+          const lk = it.volumeInfo && it.volumeInfo.imageLinks;
+          if (!lk) continue;
+          const raw = lk.extraLarge || lk.large || lk.medium ||
+                      lk.small     || lk.thumbnail || lk.smallThumbnail;
+          if (raw) {
+            return raw.replace(/^http:/, 'https:').replace('&edge=curl', '');
+          }
+        }
+      } catch (_) {}
+      return null;
+    }
+
+    async function searchOpenLibrary(query) {
+      try {
+        const r = await fetch(
+          'https://openlibrary.org/search.json?limit=3&q=' +
+          encodeURIComponent(query)
+        );
+        if (!r.ok) return null;
+        const d = await r.json();
+        for (const doc of d.docs || []) {
+          if (doc.cover_i) {
+            return 'https://covers.openlibrary.org/b/id/' + doc.cover_i + '-L.jpg';
+          }
+        }
+      } catch (_) {}
+      return null;
+    }
+
+    async function getCoverUrl(title) {
+      const key = normalize(title);
+      if (!key) return null;
+      if (cache.has(key)) return cache.get(key);
+
+      // Thử KNOWN_COVERS trước
+      if (KNOWN_COVERS[key]) {
+        cache.set(key, KNOWN_COVERS[key]);
+        return KNOWN_COVERS[key];
+      }
+
+      // Sau đó Google Books → Open Library
+      let url = await searchGoogleBooks(title);
+      if (!url) url = await searchOpenLibrary(title);
+
+      cache.set(key, url);
+      return url;
+    }
+
+    // Heuristic: tìm phần "ô bìa" trong 1 card.
+    // Thường là phần tử con đầu tiên có background-color và không có nhiều text.
+    function findCoverSlot(card) {
+      // Ưu tiên class hint
+      const hinted = card.querySelector(
+        '.book-cover, .cover, .thumb, .thumbnail, .book-thumb, [class*="cover"], [class*="thumb"]'
+      );
+      if (hinted) return hinted;
+
+      // Tìm trong các child trực tiếp
+      for (const el of card.children) {
+        if (!(el instanceof HTMLElement)) continue;
+        const style = getComputedStyle(el);
+        const hasBg = style.backgroundColor &&
+                      style.backgroundColor !== 'rgba(0, 0, 0, 0)' &&
+                      style.backgroundColor !== 'transparent';
+        if (hasBg) return el;
+      }
+      return null;
+    }
+
+    // Heuristic: lấy tên sách từ card.
+    // Ưu tiên các attribute / class title, sau đó text node đầu tiên có vẻ là title.
+    function findTitle(card) {
+      const attr = card.getAttribute('data-title') ||
+                   card.getAttribute('data-book') ||
+                   card.getAttribute('data-name');
+      if (attr) return attr;
+
+      const titleEl = card.querySelector(
+        '.book-title, .title, h1, h2, h3, h4, h5, strong, b'
+      );
+      if (titleEl && titleEl.textContent.trim()) {
+        return titleEl.textContent.trim();
+      }
+
+      // fallback: dòng text đầu tiên trong card
+      const first = (card.textContent || '').trim().split('\n')[0].trim();
+      if (first && first.length < 100) return first;
+      return null;
+    }
+
+    async function enhanceCard(card) {
+      if (!(card instanceof HTMLElement)) return;
+      if (card.dataset.coverDone === '1') return;
+      const title = findTitle(card);
+      if (!title) return;
+
+      const url = await getCoverUrl(title);
+      if (!url) return;
+
+      const slot = findCoverSlot(card) || card;
+      slot.style.setProperty('--cover-url', `url("${url}")`);
+      slot.setAttribute('data-cover', '');
+      card.dataset.coverDone = '1';
+    }
+
+    function enhanceAll() {
+      // Các container do app.js đổ data vào
+      const containers = [
+        document.getElementById('suggested-list'),
+        document.getElementById('reading-list'),
+        document.getElementById('library-list'),
+        document.getElementById('listing-list')
+      ].filter(Boolean);
+
+      for (const c of containers) {
+        for (const card of c.children) enhanceCard(card);
+      }
+    }
+
+    // Chạy lần đầu sau khi app.js render
+    const tryRun = () => setTimeout(enhanceAll, 200);
+    if (document.readyState === 'complete') tryRun();
+    else window.addEventListener('load', tryRun);
+
+    // Tự động phủ ảnh cho card mới khi app.js render lại
+    const observer = new MutationObserver((mutations) => {
+      let needRun = false;
+      for (const m of mutations) {
+        if (m.addedNodes && m.addedNodes.length) { needRun = true; break; }
+      }
+      if (needRun) setTimeout(enhanceAll, 50);
+    });
+    window.addEventListener('load', () => {
+      observer.observe(document.body, { childList: true, subtree: true });
+    });
+  })();
+  </script>
 
   <!-- ========== SCRIPT: Chụp / chọn ảnh + AI nhận xét ========== -->
   <script>
