@@ -15,6 +15,7 @@
   <title>BookConnect AI — PWA</title>
 
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="booklocket.css" />
 
   <!-- CSS bổ sung cho camera (inline để không phải sửa styles.css) -->
   <style>
@@ -200,6 +201,29 @@
         </div>
       </section>
 
+      <!-- Tab BookLocket — Khoảnh khắc đọc sách -->
+      <section class="tab" data-tab="locket" hidden>
+        <div class="bl-page-title">
+          <h1 class="page-title" style="margin:0">📸 Khoảnh khắc</h1>
+          <div class="bl-toolbar">
+            <button class="bl-icon-btn" title="Thông báo" onclick="BookLocketSocial && BookLocketSocial.openNotifModal()">
+              🔔<span class="bl-badge" id="bl-notif-badge" style="display:none">0</span>
+            </button>
+            <button class="bl-icon-btn" title="Bạn bè" onclick="BookLocketSocial && BookLocketSocial.openFriendsModal()">👥</button>
+            <button class="bl-icon-btn" title="Đọc cùng nhau" onclick="BookLocketExpansion && BookLocketExpansion.openChatList()">💬</button>
+            <button class="bl-icon-btn" title="Thử thách" onclick="BookLocketExpansion && BookLocketExpansion.openChallengesModal()">🏆</button>
+            <button class="bl-icon-btn" title="Sticker" onclick="BookLocketExpansion && BookLocketExpansion.openStickersModal()">🎨</button>
+            <button class="bl-icon-btn" title="Bảng xếp hạng" onclick="BookLocketExpansion && BookLocketExpansion.openLeaderboardModal()">🥇</button>
+          </div>
+        </div>
+        <div class="bl-story-bar" id="bl-storybar"></div>
+        <div class="bl-feed" id="bl-feed-list"></div>
+        <button class="bl-fab" type="button" onclick="BookLocket.openComposer()" title="Đăng khoảnh khắc">+</button>
+        <button class="bl-fab" type="button"
+          style="bottom:160px;background:#EC4899"
+          onclick="BookLocketAdvanced && BookLocketAdvanced.openStoryComposer()" title="Đăng story 24h">📖</button>
+      </section>
+
       <!-- Tab Market -->
       <section class="tab" data-tab="market" hidden>
         <h1 class="page-title">🛒 Chợ sách</h1>
@@ -261,6 +285,23 @@
           </div>
         </details>
 
+        <!-- BookLocket Cloud — đăng nhập Supabase -->
+        <div class="settings-group" id="bl-cloud-section" style="margin-top:8px">
+          <div class="setting-row column" style="padding:14px 16px">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+              <span style="font-weight:600">📸 BookLocket Cloud</span>
+              <span class="muted" id="bl-cloud-status">Đang kiểm tra...</span>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+              <button id="bl-login-btn" class="primary-btn" style="flex:1" hidden
+                      onclick="BookLocket.openAuthModal()">🔐 Đăng nhập / Đăng ký</button>
+              <button id="bl-logout-btn" class="secondary-btn" style="flex:1" hidden
+                      onclick="BookLocket.signOut()">↪️ Đăng xuất khỏi cloud</button>
+            </div>
+            <small class="muted" style="margin-top:6px">Đăng nhập để đồng bộ khoảnh khắc giữa các thiết bị và chia sẻ với bạn bè.</small>
+          </div>
+        </div>
+
         <button id="install-btn" class="primary-btn install-btn" hidden>📲 Cài app vào máy</button>
         <button class="logout-btn">Đăng xuất</button>
       </section>
@@ -269,6 +310,7 @@
     <nav class="tabbar">
       <button class="tab-btn active" data-target="home"><div class="tab-icon">🏠</div><div class="tab-label">Trang chủ</div></button>
       <button class="tab-btn" data-target="library"><div class="tab-icon">📚</div><div class="tab-label">Tủ sách</div></button>
+      <button class="tab-btn" data-target="locket"><div class="tab-icon">📸</div><div class="tab-label">Khoảnh khắc</div></button>
       <button class="tab-btn" data-target="scan"><div class="tab-icon">🔍</div><div class="tab-label">Quét AI</div></button>
       <button class="tab-btn" data-target="market"><div class="tab-icon">🛒</div><div class="tab-label">Chợ sách</div></button>
       <button class="tab-btn" data-target="profile"><div class="tab-icon">👤</div><div class="tab-label">Cá nhân</div></button>
@@ -279,6 +321,24 @@
 
   <script src="app.js"></script>
   <script src="api.js"></script>
+
+  <!-- ========== BookLocket — Giai đoạn 2: Backend Supabase ==========
+       Để bật cloud, đăng ký Supabase miễn phí, paste 2 giá trị vào đây.
+       Nếu để rỗng → BookLocket tự rơi về chế độ local (localStorage).
+       Hướng dẫn chi tiết xem file: supabase/SETUP.md
+  =================================================================== -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    window.BL_SUPABASE = {
+      url:     'https://nqcqrwdsyydpdowhwmoe.supabase.co',
+      anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5xY3Fyd2RzeXlkcGRvd2h3bW9lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3MDM4OTAsImV4cCI6MjA5NDI3OTg5MH0.6i3CffIEC6OCd-Y7PbXhOsqcIYzDE-fuUS8UpVrnKNI'
+    };
+  </script>
+  <script src="booklocket-supabase.js"></script>
+  <script src="booklocket.js"></script>
+  <script src="booklocket-social.js"></script>
+  <script src="booklocket-advanced.js"></script>
+  <script src="booklocket-expansion.js"></script>
   <script src="register-sw.js"></script>
 
   <!-- ========== ENHANCER: Phủ ảnh bìa sách lên các card ========== -->
